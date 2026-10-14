@@ -87,7 +87,7 @@ import { buildSubagentTurnsFromHistory, buildTurnsFromHistory, mapSessionEventsT
 import { type ISessionEvent } from './copilotTestEvents.js';
 import { createNoopGitService, createNullSessionDataService, createSessionDataService, TestSessionDatabase } from '../common/sessionTestHelpers.js';
 import { mintedTestChatOwner, isMintedTestDefaultChat } from '../common/mintedChatUri.js';
-import { findTestCatalogPayloadChatOwners, findTestCentralChatOwners, listTestLegacyChatCatalogSessions, readTestChatV2, readTestSessionListCatalogs, readTestSessionRegistrations, SessionStateUnsupportedDatabase, testRegistrationGeneration, seedSessionAdditionalWorktrees } from './chatMetadataTestHelpers.js';
+import { findTestCatalogPayloadChatOwners, findTestCentralChatOwners, listTestLegacyChatCatalogSessions, readTestChatV2, readTestSessionListCatalogs, readTestSessionRegistrations, SessionStateUnsupportedDatabase, testRegistrationGeneration, seedSessionAdditionalWorktrees, createTestSessionStateStore } from './chatMetadataTestHelpers.js';
 import { readSessionInitiator, SESSION_INITIATOR_METADATA_KEY, withSessionInitiator } from '../../common/meta/agentSessionInitiatorMeta.js';
 import { buildGitBlobUri } from '../../node/gitDiffContent.js';
 import { getWorkingDirectoryKey, getWorkingDirectoryScopeId } from '../../common/agentHostWorkingDirectories.js';
@@ -3098,6 +3098,7 @@ suite('AgentService (node dispatcher)', () => {
 			gitService,
 			nullPullRequestResolver,
 			nullSessionDataService,
+			getTestSessionStateStore(localService),
 			new NullLogService(),
 		)));
 		const agent = new MockAgent('copilot');
@@ -3166,6 +3167,7 @@ suite('AgentService (node dispatcher)', () => {
 			gitService,
 			nullPullRequestResolver,
 			nullSessionDataService,
+			getTestSessionStateStore(localService),
 			new NullLogService(),
 		)));
 		const agent = new MockAgent('codex');
@@ -3364,6 +3366,7 @@ suite('AgentService (node dispatcher)', () => {
 			gitService,
 			nullPullRequestResolver,
 			nullSessionDataService,
+			disposables.add(createTestSessionStateStore(disposables.add(new AgentHostDatabase(':memory:')), nullSessionDataService)),
 			new NullLogService(),
 		));
 		setTestAgentHostWorktreeIsolation(localService, isolation);
@@ -3814,6 +3817,7 @@ suite('AgentService (node dispatcher)', () => {
 			gitService,
 			nullPullRequestResolver,
 			sessionDataService,
+			disposables.add(createTestSessionStateStore(disposables.add(new AgentHostDatabase(':memory:')), sessionDataService)),
 			new NullLogService(),
 		));
 		setTestAgentHostWorktreeIsolation(localService, isolation);
@@ -17381,6 +17385,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				nullPullRequestResolver,
 				sessionDataService,
+				getTestSessionStateStore(svc),
 				new NullLogService(),
 			)));
 			await createAgentSession(agent);
@@ -17428,6 +17433,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				nullPullRequestResolver,
 				sessionDataService,
+				getTestSessionStateStore(svc),
 				new NullLogService(),
 			)));
 			registerTestAgentProvider(svc, agent);
@@ -19391,6 +19397,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				nullPullRequestResolver,
 				nullSessionDataService,
+				disposables.add(createTestSessionStateStore(disposables.add(new AgentHostDatabase(':memory:')), nullSessionDataService)),
 				new NullLogService(),
 			));
 			setTestAgentHostWorktreeIsolation(service, isolation);
@@ -27312,6 +27319,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				nullPullRequestResolver,
 				sessionDataService,
+				getTestSessionStateStore(localService),
 				new NullLogService(),
 			)));
 			const agent = disposables.add(new ServerToolAgent('copilot'));
@@ -30660,6 +30668,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				nullPullRequestResolver,
 				sessionDataService,
+				getTestSessionStateStore(localService),
 				new NullLogService(),
 			)));
 			registerTestAgentProvider(localService, localAgent);
@@ -31065,6 +31074,7 @@ suite('AgentService (node dispatcher)', () => {
 				firstGitService,
 				nullPullRequestResolver,
 				firstSessionDataService,
+				disposables.add(createTestSessionStateStore(disposables.add(new AgentHostDatabase(':memory:')), firstSessionDataService)),
 				new NullLogService(),
 			));
 			setTestAgentHostWorktreeIsolation(firstService, firstIsolation);
@@ -31146,6 +31156,7 @@ suite('AgentService (node dispatcher)', () => {
 				freshGitService,
 				nullPullRequestResolver,
 				freshSessionDataService,
+				disposables.add(createTestSessionStateStore(disposables.add(new AgentHostDatabase(':memory:')), freshSessionDataService)),
 				new NullLogService(),
 			));
 			setTestAgentHostWorktreeIsolation(freshService, freshIsolation);
@@ -31246,6 +31257,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				{ _serviceBrand: undefined, resolve: async url => ({ url, webHost: 'github.com', owner: 'microsoft', repo: 'vscode', number: 42, headRef: 'feature/pr', baseRef: 'main' }) },
 				sessionDataService,
+				getTestSessionStateStore(localService),
 				new NullLogService(),
 			)));
 			const agent = new MaterializingAgent('copilot');
@@ -31361,6 +31373,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				nullPullRequestResolver,
 				nullSessionDataService,
+				disposables.add(createTestSessionStateStore(disposables.add(new AgentHostDatabase(':memory:')), nullSessionDataService)),
 				new NullLogService(),
 			));
 			setTestAgentHostWorktreeIsolation(localService, isolation);
@@ -31574,6 +31587,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				nullPullRequestResolver,
 				sessionDataService,
+				disposables.add(createTestSessionStateStore(disposables.add(new AgentHostDatabase(':memory:')), sessionDataService)),
 				new NullLogService(),
 			));
 			setTestAgentHostWorktreeIsolation(localService, isolation);
@@ -31680,6 +31694,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				nullPullRequestResolver,
 				sessionDataService,
+				disposables.add(createTestSessionStateStore(disposables.add(new AgentHostDatabase(':memory:')), sessionDataService)),
 				new NullLogService(),
 			));
 			setTestAgentHostWorktreeIsolation(localService, isolation);
@@ -31751,6 +31766,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				nullPullRequestResolver,
 				sessionDataService,
+				disposables.add(createTestSessionStateStore(disposables.add(new AgentHostDatabase(':memory:')), sessionDataService)),
 				new NullLogService(),
 			));
 			setTestAgentHostWorktreeIsolation(localService, isolation);
@@ -31795,6 +31811,7 @@ suite('AgentService (node dispatcher)', () => {
 				gitService,
 				nullPullRequestResolver,
 				sessionDataService,
+				disposables.add(createTestSessionStateStore(disposables.add(new AgentHostDatabase(':memory:')), sessionDataService)),
 				new NullLogService(),
 			));
 			setTestAgentHostWorktreeIsolation(localService, isolation);
