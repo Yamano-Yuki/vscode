@@ -557,6 +557,8 @@ class TestSessionDatabase extends SessionDatabase {
 	}
 
 	override applyMetadataChanges(set: Readonly<Record<string, string>>, remove: readonly string[]): Promise<void> {
+		// Session state mirrored by the session state store lands in the session database too.
+		this.metadataWrites.push(...Object.entries(set).map(([key, value]) => ({ key, value })), ...remove.map(key => ({ key, value: '<removed>' })));
 		Object.assign(this.mirror ?? {}, set);
 		for (const key of remove) {
 			delete this.mirror?.[key];
@@ -1434,6 +1436,12 @@ function getCreatedClientOptions(agent: CopilotAgent): readonly CopilotClientOpt
 const sessionDataServicesByAgent = new WeakMap<CopilotAgent, ISessionDataService>();
 const sessionStateStoresByAgent = new WeakMap<CopilotAgent, IAgentHostSessionStateStore>();
 
+/** Reads the customization directory the provider seam sees: the session's central state. */
+async function centralCustomizationDirectory(agent: CopilotAgent, session: URI): Promise<string | undefined> {
+	const values = await sessionStateStoresByAgent.get(agent)!.readWithoutImport(session, ['copilot.customizationDirectory']);
+	return values.get('copilot.customizationDirectory');
+}
+
 function createTestAgentContext(disposables: Pick<DisposableStore, 'add'>, options?: { sessionDataService?: ISessionDataService; copilotClient?: ITestCopilotClient; useRealResumePath?: boolean; gitService?: TestAgentHostGitService; environmentServiceRegistration?: 'native' | 'none'; pluginManager?: IAgentPluginManager; fileService?: FileService; copilotApiService?: ICopilotApiService; gitHubEndpointService?: IAgentHostGitHubEndpointService; telemetryService?: ITelemetryService; userHome?: URI; logService?: ILogService; proxyResolver?: IAgentHostProxyResolver; byokBridgeRegistry?: IByokLmBridgeRegistry; byokProxyService?: IByokLmProxyService; otelService?: IAgentHostOTelService; customizationEnablementService?: ICustomizationEnablementService; useRealCustomizationEnablementService?: boolean; worktreeIsolation?: IAgentHostWorktreeIsolation; rootConfig?: Record<string, unknown>; now?: () => number; startupPerformance?: IAgentHostStartupPerformance; productService?: IProductService; localModelSetupService?: ILocalModelSetupService }): { agent: CopilotAgent; instantiationService: IInstantiationService; authenticationService: AgentHostAuthenticationService; configurationService: IAgentConfigurationService; worktreeIsolation: IAgentHostWorktreeIsolation; managedSettingsService: IAgentHostManagedSettingsService; fileService: FileService; stateManager: AgentHostStateManager } {
 	const services = new ServiceCollection();
 	const logService = options?.logService ?? new NullLogService();
@@ -1475,7 +1483,6 @@ function createTestAgentContext(disposables: Pick<DisposableStore, 'add'>, optio
 		?? (options?.useRealCustomizationEnablementService
 			? disposables.add(new AgentHostCustomizationEnablementService(
 				disposables.add(new AgentHostStorageService(undefined, logService)),
-				sessionDataService,
 				stateManager,
 				logService,
 				worktreeIsolation,
@@ -6389,6 +6396,7 @@ suite('CopilotAgent', () => {
 					pluginDirectory: activeClient.pluginController.directory?.toString(),
 					pluginAdditionalDirectories: activeClient.pluginController.additionalDirectories.map(directory => directory.toString()),
 					metadata,
+					centralCustomizationDirectory: await centralCustomizationDirectory(agent, session),
 				}, {
 					sameSession: true,
 					sdkSessionId: 'test-session-1',
@@ -6406,6 +6414,7 @@ suite('CopilotAgent', () => {
 						'copilot.project.resolved': 'true',
 						'agentHost.workspaceless': 'true',
 					},
+					centralCustomizationDirectory: next.toString(),
 				});
 
 				const restored = createTestAgent(disposables, {
@@ -8187,6 +8196,7 @@ suite('CopilotAgent', () => {
 					pluginAdditionalDirectories: activeClient.pluginController.additionalDirectories.map(directory => directory.toString()),
 					metadataWrites: sessionDataService.metadataWrites(session).slice(writeStart),
 					metadata,
+					centralCustomizationDirectory: await centralCustomizationDirectory(agent, session),
 				}, {
 					failure: 'provider metadata: metadata write failed',
 					liveWorkingDirectory: previous.toString(),
@@ -8194,20 +8204,20 @@ suite('CopilotAgent', () => {
 					pluginDirectory: previous.toString(),
 					pluginAdditionalDirectories: [],
 					metadataWrites: [
-						{ key: 'copilot.workingDirectory', value: next.toString() },
-						{ key: 'copilot.workingDirectories', value: JSON.stringify([next.toString()]) },
 						{ key: 'copilot.customizationDirectory', value: next.toString() },
 						{ key: 'copilot.sharedCustomizationDirectories', value: '' },
 						{ key: 'copilot.project.uri', value: '' },
 						{ key: 'copilot.project.displayName', value: '' },
 						{ key: 'copilot.project.resolved', value: 'true' },
-						{ key: 'copilot.workingDirectory', value: previous.toString() },
-						{ key: 'copilot.workingDirectories', value: JSON.stringify([previous.toString()]) },
+						{ key: 'copilot.workingDirectory', value: next.toString() },
+						{ key: 'copilot.workingDirectories', value: JSON.stringify([next.toString()]) },
 						{ key: 'copilot.customizationDirectory', value: previous.toString() },
 						{ key: 'copilot.sharedCustomizationDirectories', value: '' },
 						{ key: 'copilot.project.uri', value: '' },
 						{ key: 'copilot.project.displayName', value: '' },
 						{ key: 'copilot.project.resolved', value: '' },
+						{ key: 'copilot.workingDirectory', value: previous.toString() },
+						{ key: 'copilot.workingDirectories', value: JSON.stringify([previous.toString()]) },
 					],
 					metadata: {
 						'copilot.workingDirectory': previous.toString(),
@@ -8215,6 +8225,7 @@ suite('CopilotAgent', () => {
 						'copilot.customizationDirectory': previous.toString(),
 						'agentHost.workspaceless': 'true',
 					},
+					centralCustomizationDirectory: previous.toString(),
 				});
 			} finally {
 				await fs.rm(root, { recursive: true, force: true });
@@ -8287,20 +8298,20 @@ suite('CopilotAgent', () => {
 					pluginDirectory: previous.toString(),
 					pluginAdditionalDirectories: [],
 					metadataWrites: [
-						{ key: 'copilot.workingDirectory', value: next.toString() },
-						{ key: 'copilot.workingDirectories', value: JSON.stringify([next.toString()]) },
 						{ key: 'copilot.customizationDirectory', value: next.toString() },
 						{ key: 'copilot.sharedCustomizationDirectories', value: '' },
 						{ key: 'copilot.project.uri', value: '' },
 						{ key: 'copilot.project.displayName', value: '' },
 						{ key: 'copilot.project.resolved', value: 'true' },
-						{ key: 'copilot.workingDirectory', value: previous.toString() },
-						{ key: 'copilot.workingDirectories', value: JSON.stringify([previous.toString()]) },
+						{ key: 'copilot.workingDirectory', value: next.toString() },
+						{ key: 'copilot.workingDirectories', value: JSON.stringify([next.toString()]) },
 						{ key: 'copilot.customizationDirectory', value: previous.toString() },
 						{ key: 'copilot.sharedCustomizationDirectories', value: '' },
 						{ key: 'copilot.project.uri', value: previous.toString() },
 						{ key: 'copilot.project.displayName', value: 'previous' },
 						{ key: 'copilot.project.resolved', value: 'true' },
+						{ key: 'copilot.workingDirectory', value: previous.toString() },
+						{ key: 'copilot.workingDirectories', value: JSON.stringify([previous.toString()]) },
 					],
 					metadata: {
 						'copilot.workingDirectory': previous.toString(),
@@ -8383,20 +8394,20 @@ suite('CopilotAgent', () => {
 					pluginDirectory: actual.toString(),
 					pluginAdditionalDirectories: [],
 					metadataWrites: [
+						{ key: 'copilot.customizationDirectory', value: next.toString() },
+						{ key: 'copilot.sharedCustomizationDirectories', value: '' },
+						{ key: 'copilot.project.uri', value: '' },
+						{ key: 'copilot.project.displayName', value: '' },
+						{ key: 'copilot.project.resolved', value: 'true' },
 						{ key: 'copilot.workingDirectory', value: next.toString() },
 						{ key: 'copilot.workingDirectories', value: JSON.stringify([next.toString()]) },
-						{ key: 'copilot.customizationDirectory', value: next.toString() },
+						{ key: 'copilot.customizationDirectory', value: actual.toString() },
 						{ key: 'copilot.sharedCustomizationDirectories', value: '' },
 						{ key: 'copilot.project.uri', value: '' },
 						{ key: 'copilot.project.displayName', value: '' },
 						{ key: 'copilot.project.resolved', value: 'true' },
 						{ key: 'copilot.workingDirectory', value: actual.toString() },
 						{ key: 'copilot.workingDirectories', value: JSON.stringify([actual.toString()]) },
-						{ key: 'copilot.customizationDirectory', value: actual.toString() },
-						{ key: 'copilot.sharedCustomizationDirectories', value: '' },
-						{ key: 'copilot.project.uri', value: '' },
-						{ key: 'copilot.project.displayName', value: '' },
-						{ key: 'copilot.project.resolved', value: 'true' },
 					],
 					metadata: {
 						'copilot.workingDirectory': actual.toString(),
