@@ -1691,19 +1691,22 @@ suite('CopilotAgent', () => {
 			try {
 				await agent['_storeSessionMetadata'](session, model, primary, [primary, secondary], customizationDirectory, project, true, config, true, true, 'last-migrated-turn');
 
-				const ownedKeys = [AH_META_IS_ARCHIVED_DB_KEY, AH_META_EHCLI_ADOPTED_DB_KEY, AH_META_EHCLI_LAST_TURN_DB_KEY, 'configValues', 'copilot.customizationDirectory', 'copilot.project.resolved', 'copilot.project.uri', 'copilot.project.displayName'];
+				const ownedKeys = [AH_META_IS_ARCHIVED_DB_KEY, 'configValues', 'copilot.customizationDirectory', 'copilot.project.resolved', 'copilot.project.uri', 'copilot.project.displayName'];
 				const owned = Object.fromEntries(Object.entries(expected).filter(([key]) => ownedKeys.includes(key)));
-				const unowned = Object.fromEntries(Object.entries(expected).filter(([key]) => !ownedKeys.includes(key)));
+				const ehcliKeys = [AH_META_EHCLI_ADOPTED_DB_KEY, AH_META_EHCLI_LAST_TURN_DB_KEY];
+				const unowned = Object.fromEntries(Object.entries(expected).filter(([key]) => !ownedKeys.includes(key) && !ehcliKeys.includes(key)));
 				assert.deepStrictEqual({
 					individualWrites: individualWrites.callCount,
 					mirroredOwned: mirrorWrites.firstCall?.args[0],
 					batchedUnowned: batchedWrites.firstCall?.args[0],
-					stored: await ref.object.getMetadataObject(expected),
+					stored: await ref.object.getMetadataObject(Object.fromEntries(Object.keys(expected).map(key => [key, true]))),
+					central: Object.fromEntries(await sessionStateStoresByAgent.get(agent)!.readWithoutImport(session, ehcliKeys)),
 				}, {
 					individualWrites: 0,
 					mirroredOwned: owned,
 					batchedUnowned: unowned,
-					stored: expected,
+					stored: { ...expected, ...Object.fromEntries(ehcliKeys.map(key => [key, undefined])) },
+					central: { [AH_META_EHCLI_ADOPTED_DB_KEY]: 'true', [AH_META_EHCLI_LAST_TURN_DB_KEY]: 'last-migrated-turn' },
 				});
 			} finally {
 				individualWrites.restore();
@@ -22606,7 +22609,7 @@ suite('CopilotAgent', () => {
 				const adopted = await ensureDefaultChatAdopted(agent, session);
 
 				const db = await sessionDataService.tryOpenDatabase(session);
-				const marker = await db?.object.getMetadata('agentHost.ehcliAdopted');
+				const marker = (await sessionStateStoresByAgent.get(agent)?.readWithoutImport(session, ['agentHost.ehcliAdopted']))?.get('agentHost.ehcliAdopted');
 				const title = await db?.object.getMetadata('customTitle');
 				const titleSource = await db?.object.getMetadata('customTitleSource');
 				const isRead = await db?.object.getMetadata(AH_META_IS_READ_DB_KEY);
@@ -22644,7 +22647,7 @@ suite('CopilotAgent', () => {
 				await ensureDefaultChatAdopted(agent, session);
 
 				const db = await sessionDataService.tryOpenDatabase(session);
-				const lastTurn = await db?.object.getMetadata('agentHost.ehcliLastMigratedTurn');
+				const lastTurn = (await sessionStateStoresByAgent.get(agent)?.readWithoutImport(session, ['agentHost.ehcliLastMigratedTurn']))?.get('agentHost.ehcliLastMigratedTurn');
 				db?.dispose();
 
 				assert.strictEqual(lastTurn, 'turn-2');
@@ -22684,7 +22687,7 @@ suite('CopilotAgent', () => {
 
 				const db = await sessionDataService.tryOpenDatabase(session);
 				const baseBranch = await db?.object.getMetadata('agentHost.diffBaseBranch');
-				const lastTurn = await db?.object.getMetadata('agentHost.ehcliLastMigratedTurn');
+				const lastTurn = (await sessionStateStoresByAgent.get(agent)?.readWithoutImport(session, ['agentHost.ehcliLastMigratedTurn']))?.get('agentHost.ehcliLastMigratedTurn');
 				db?.dispose();
 
 				assert.deepStrictEqual(
